@@ -15,7 +15,8 @@ jobs:
           sudo apt update && sudo apt install -y \
             bc build-essential flex bison \
             libssl-dev libelf-dev git python3 curl \
-            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
+            lld llvm
 
       - name: Clone Kernel Source
         run: |
@@ -62,7 +63,17 @@ jobs:
           cd kernel-src
           export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
 
-          make O=out ARCH=arm64 gki_defconfig
+          which ld.lld || { echo "ld.lld not found in PATH!"; ls $GITHUB_WORKSPACE/clang/bin/; exit 1; }
+
+          make O=out ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            gki_defconfig
 
           make O=out ARCH=arm64 \
             CC=clang \
