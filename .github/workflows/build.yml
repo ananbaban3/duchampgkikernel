@@ -1,0 +1,52 @@
+name: duchamp-fix-build
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Your Repo
+        uses: actions/checkout@v4
+
+      - name: Install Build Essentials
+        run: |
+          sudo apt update && sudo apt install -y bc build-essential flex bison libssl-dev libelf-dev git python3 curl
+
+      - name: Clone Kernel Source (Aganın attığı ramabondanp)
+        run: |
+          git clone --depth=1 https://github.com/ramabondanp/android_kernel_common-6.1 -b main kernel-src
+
+      - name: Clone Compiler (Aganın attığı greenforce)
+        run: |
+          git clone --depth=1 https://github.com/greenforce-project/greenforce_clang clang
+
+      - name: Inject Droidspaces Fixes
+        run: |
+          cd kernel-src
+          # Ayarları direkt gki_defconfig içine basıyoruz
+          DEFCONFIG="arch/arm64/configs/gki_defconfig"
+          echo "CONFIG_PID_NS=y" >> $DEFCONFIG
+          echo "CONFIG_DEVTMPFS=y" >> $DEFCONFIG
+          echo "CONFIG_SYSVIPC=y" >> $DEFCONFIG
+          echo "CONFIG_POSIX_MQUEUE=y" >> $DEFCONFIG
+          echo "CONFIG_NETFILTER_XT_TARGET_REJECT=y" >> $DEFCONFIG
+          
+          # Eğer reponda .patch dosyası varsa onu da buraya ekleyelim
+          # Patch dosyanın adını "fix.patch" yapıp repoya yüklersen bu satır çalışır:
+          if [ -f "../fix.patch" ]; then
+            git apply ../fix.patch || patch -p1 < ../fix.patch
+          fi
+
+      - name: Build
+        run: |
+          cd kernel-src
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          make O=out ARCH=arm64 gki_defconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- -j$(nproc --all)
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Duchamp-Kernel-Fix
+          path: kernel-src/out/arch/arm64/boo
+          t/Image
