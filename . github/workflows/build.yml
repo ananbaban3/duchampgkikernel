@@ -1,0 +1,86 @@
+name: duchamp-fix-build
+on: [workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout Your Repo
+        uses: actions/checkout@v4
+
+      - name: Install Build Essentials
+        run: |
+          sudo apt update && sudo apt install -y \
+            bc build-essential flex bison \
+            libssl-dev libelf-dev git python3 curl \
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi
+
+      - name: Clone Kernel Source
+        run: |
+          for i in 1 2 3; do
+            git clone --depth=1 https://github.com/ramabondanp/android_kernel_common-6.1 \
+              -b android14-6.1 kernel-src && break
+            echo "Retry $i failed, waiting 10s..."
+            sleep 10
+          done
+          [ -d kernel-src ] || { echo "ERROR: kernel clone failed after 3 attempts"; exit 1; }
+
+      - name: Clone Compiler (greenforce)
+        run: |
+          for i in 1 2 3; do
+            git clone --depth=1 https://github.com/greenforce-project/greenforce_clang clang && break
+            echo "Retry $i failed, waiting 10s..."
+            sleep 10
+          done
+          [ -d clang ] || { echo "ERROR: clang clone failed after 3 attempts"; exit 1; }
+
+      - name: Inject Droidspaces Fixes
+        run: |
+          cd kernel-src
+          DEFCONFIG="arch/arm64/configs/gki_defconfig"
+
+          if [ ! -f "$DEFCONFIG" ]; then
+            echo "ERROR: $DEFCONFIG not found!"
+            ls arch/arm64/configs/
+            exit 1
+          fi
+
+          echo "CONFIG_PID_NS=y"                          >> $DEFCONFIG
+          echo "CONFIG_DEVTMPFS=y"                        >> $DEFCONFIG
+          echo "CONFIG_SYSVIPC=y"                         >> $DEFCONFIG
+          echo "CONFIG_POSIX_MQUEUE=y"                    >> $DEFCONFIG
+          echo "CONFIG_NETFILTER_XT_TARGET_REJECT=y"      >> $DEFCONFIG
+
+          if [ -f "../fix.patch" ]; then
+            git apply ../fix.patch || patch -p1 < ../fix.patch
+          fi
+
+      - name: Build
+        run: |
+          cd kernel-src
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
+          make O=out ARCH=arm64 gki_defconfig
+
+          make O=out ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            -j$(nproc --all)
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Duchamp-Kernel-Fix
+          path: kernel-src/out/arch/arm64/boot/Image
