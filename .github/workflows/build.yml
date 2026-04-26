@@ -16,7 +16,7 @@ jobs:
             bc build-essential flex bison \
             libssl-dev libelf-dev git python3 curl \
             binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi \
-            lld llvm
+            lld llvm dwarves
 
       - name: Clone Kernel Source
         run: |
@@ -53,6 +53,8 @@ jobs:
           echo "CONFIG_SYSVIPC=y"                         >> $DEFCONFIG
           echo "CONFIG_POSIX_MQUEUE=y"                    >> $DEFCONFIG
           echo "CONFIG_NETFILTER_XT_TARGET_REJECT=y"      >> $DEFCONFIG
+          echo "CONFIG_DEBUG_INFO_BTF=n"                  >> $DEFCONFIG
+          echo "CONFIG_DEBUG_INFO_BTF_MODULES=n"          >> $DEFCONFIG
 
           if [ -f "../fix.patch" ]; then
             git apply ../fix.patch || patch -p1 < ../fix.patch
